@@ -64,10 +64,9 @@ startWatcher site buildAction =
         -- Keep the main watcher thread alive indefinitely
         forever $ threadDelay 1000000 -- Sleep for 1 second
 
-watch :: Site -> IO ()
-watch site = do
+watch :: Site -> Int -> IO ()
+watch site port = do
     let 
-        port = 8000
         dir  = view publicDirL site -- dir is FilePath
         buildAction = build site 
 
