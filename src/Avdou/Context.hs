@@ -8,18 +8,21 @@ module Avdou.Context
   , insertManyCtx
   , mergeCtx
   , lookupCtx
+  , executeMine
   ) where
 
 import           RIO
-import           Text.Mustache (ToMustache(..), Template, automaticCompile)
+import           Text.Mustache (Template, automaticCompile)
 import           RIO.Directory (listDirectory)
 import           RIO.HashMap (fromList)
 import qualified RIO.Text as T
+import qualified RIO.Map as Map 
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
 import           Avdou.Types
-
+import           Avdou.Document (load)
+import           Avdou.Pattern
 
 -- Insert a key/value
 insertCtx :: Text -> Aeson.Value -> Context -> Context
@@ -47,4 +50,20 @@ loadTemplates path = do
                            Left _  -> error "Failed to parse template"
                        ) eitherTemplates
   pure $ fromList templates
+
+executeMine :: FilePath -> Mine -> IO (HashMap Text Context)
+executeMine siteDir mine = do
+  let pat  = view minePatternL mine
+  let workers = view mineWorkersL mine 
+  files <- expandPattern siteDir pat
+  list <- forM files $ \file -> do
+    ctx <- mineLocal file workers
+    pure (T.pack file, ctx)
+
+  pure $ fromList list
+
+mineLocal :: FilePath -> [Document -> Context] -> IO Context
+mineLocal file workers = do
+    doc <- load file
+    pure $ foldl' (\acc f -> mergeCtx (f doc) acc) mempty workers
 

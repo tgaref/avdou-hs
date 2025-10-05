@@ -9,14 +9,11 @@ module Avdou.Rule
 import           Prelude (print)
 import           RIO
 import qualified RIO.Directory as Dir
-import qualified RIO.Text as T
 import           System.FilePath (takeDirectory, (</>), makeRelative)
-import           System.FilePath.Glob (glob)
 import           Data.Aeson (ToJSON (toJSON))
-import           Text.Mustache (Template, substitute)
+import           Text.Mustache (substitute)
 import qualified RIO.HashMap as HM (lookupDefault)
 import           Avdou.Document
-import           Avdou.Route
 import           Avdou.Context
 import           Avdou.Types
 import Avdou.Pattern (expandPattern)
@@ -26,8 +23,7 @@ import Avdou.Pattern (expandPattern)
 executeCopy :: Site -> Copy -> IO ()
 executeCopy site (Copy pat route) = do
   let siteDir = view siteDirL site
---  files <- glob (siteDir </> T.unpack pat)   -- expand glob to actual paths
-  files <- expandPattern site pat
+  files <- expandPattern siteDir pat
   forM_ files $ \src -> do
     isFile <- Dir.doesFileExist src
     when isFile $ do
@@ -40,8 +36,7 @@ executeCopy site (Copy pat route) = do
 executeRule :: Site -> Rule -> IO ()
 executeRule site (Rule pat filters templates route) = do
   let siteDir = view siteDirL site
---  files <- glob (siteDir </> T.unpack pat)   -- expand glob to actual paths
-  files <- expandPattern site pat
+  files <- expandPattern siteDir pat
   forM_ files $ \src -> do
     -- load the document from disc
     doc <- load src

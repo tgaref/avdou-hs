@@ -23,6 +23,10 @@ module Avdou.Types
   , Pattern (..)
   , Context (..)
   , Route
+  , HasSite (..)
+  , Mine (..)
+  , minePatternL
+  , mineWorkersL
   ) where
 
 import           RIO
@@ -122,3 +126,19 @@ instance Monoid Context where
 instance ToMustache Context where
   toMustache (Context obj) = toMustache (Aeson.Object obj)
 
+class HasSite env where
+  siteL :: Lens' env Site
+
+instance HasSite Site where
+  siteL = id
+  
+data Mine = Mine {
+    _minePattern :: !Pattern
+  , _mineWorkers :: [Document -> Context]
+  }
+
+minePatternL :: Lens' Mine Pattern
+minePatternL = lens _minePattern (\mine pat -> mine {_minePattern = pat})
+
+mineWorkersL :: Lens' Mine [Document -> Context]
+mineWorkersL = lens _mineWorkers (\mine ws -> mine {_mineWorkers = ws})

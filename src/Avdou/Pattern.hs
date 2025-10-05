@@ -12,9 +12,8 @@ import           Avdou.Types
 import           RIO.HashSet (union, intersection, fromList, member)
 import           System.FilePath ((</>))
 
-expandPattern :: Site -> Pattern -> IO [FilePath]
-expandPattern site pat = do
-  let siteDir = view siteDirL site
+expandPattern :: FilePath -> Pattern -> IO [FilePath]
+expandPattern siteDir pat = do
   case pat of
     Simple p -> glob (siteDir </> T.unpack p)
 
