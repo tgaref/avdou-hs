@@ -1,18 +1,21 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Route
-  (Route
-  , idRoute
+module Avdou.Route
+  ( idRoute
   , setExtension
+  , niceRoute
   ) where
 
 import RIO
-import RIO.FilePath (replaceExtension)
+import RIO.FilePath
 
-type Route = FilePath -> FilePath 
+import Avdou.Types
 
 idRoute :: FilePath -> FilePath
 idRoute = id
 
 setExtension :: String -> FilePath -> FilePath
 setExtension = flip replaceExtension
+
+niceRoute :: FilePath -> FilePath
+niceRoute fp = takeDirectory fp </> takeBaseName fp </> "index.html"

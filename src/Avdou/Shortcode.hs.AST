@@ -1,0 +1,160 @@
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+module Avdou.Shortcode
+  ( ShortcodeConfig
+  , expandShortcodes
+  ) where
+
+
+import           RIO hiding (try, many, some)
+import qualified RIO.Text as T
+import qualified RIO.Map as M
+import Text.Pandoc.Definition (Pandoc(..), Block(..), Inline(..), Format(..))
+import Text.Pandoc.Class (runPure)
+import Text.Pandoc.Readers.Markdown (readMarkdown)
+import Text.Pandoc.Writers.HTML (writeHtml5String)
+import Text.Pandoc.Options (def, readerExtensions, writerHTMLMathMethod, HTMLMathMethod(..))
+import Text.Pandoc.Extensions (pandocExtensions, enableExtension, Extension(..))
+import Data.Text (breakOn)
+
+-- | Type alias for the shortcode configuration map.
+-- IMPORTANT: Updated to Map Text ([Text] -> Text) as requested.
+type ShortcodeMap = M.Map Text ([Text] -> Text)
+type ShortcodeConfig = ShortcodeMap
+
+
+--------------------------------------------------------------------------------
+-- Helper Functions (Mocks for real-world complexity)
+--------------------------------------------------------------------------------
+
+-- | **MOCK:** Parses the raw text content of the placeholder block.
+-- FIX: Replaced argument splitting from T.splitOn to T.words to avoid known 
+-- instability issues with T.splitOn in certain runtime environments. 
+-- The argument delimiter is now whitespace, not '|'.
+parseShortcodeFromRaw :: Text -> Maybe (Text, [Text])
+parseShortcodeFromRaw content = 
+    let (name, restWithColon) = breakOn ":" content
+    in if T.null restWithColon || T.null name
+       then Nothing -- No delimiter found, or name is empty
+       else
+           let 
+               -- restWithColon starts with the delimiter, so T.drop 1 removes the leading ':'
+               rawArgsText = T.drop 1 restWithColon 
+               -- Split the argument string by whitespace (more robust than T.splitOn)
+               args = T.words rawArgsText
+           in Just (name, args)
+
+-- | **CORE AST COMPILER:** Compiles the raw shortcode arguments into structured AST Blocks.
+-- This function runs the Pandoc reader recursively on the argument content.
+-- It expects a list of Text strings (which represent the raw Markdown/LaTeX input).
+compileArgToBlocks :: [Text] -> [Block]
+compileArgToBlocks rawArgs = 
+    let 
+        -- Combine arguments and define reader/writer options for the recursive call
+        markdownArgument = T.unwords rawArgs
+        
+        -- Enable the required extension (CRITICAL for math support)
+        readerExts = enableExtension Ext_tex_math_dollars pandocExtensions
+        readerOpts = def { readerExtensions = readerExts }
+        writerOpts = def { writerHTMLMathMethod = MathJax "" }
+    in
+    case runPure $ readMarkdown readerOpts markdownArgument of
+        -- SUCCESS: Extract the blocks from the resulting Pandoc document.
+        Right (Pandoc _ blocks) -> blocks
+        
+        -- FAILURE: Return an error message wrapped in a paragraph.
+        Left err -> [Para [Str $ T.pack $ "Error compiling argument: " ++ show err]]
+
+
+--------------------------------------------------------------------------------
+-- AST Transformation Function
+--------------------------------------------------------------------------------
+
+-- | The list-returning transformation function (Block -> [Block])
+-- This function contains the core shortcode expansion logic.
+replaceShortcodes :: ShortcodeMap -> Block -> [Block]
+replaceShortcodes scMap block = case block of
+    -- Check for the expected placeholder created by the initial parser.
+    RawBlock format content | format == "shortcode-placeholder" -> 
+        case parseShortcodeFromRaw content of 
+            Just (name, args) ->
+                case M.lookup name scMap of
+                    -- Found the shortcode:
+                    Just f  -> 
+                        -- CRITICAL CHANGE: Call the user function f args to get Text,
+                        -- then immediately wrap the output in a list and pass it to 
+                        -- compileArgToBlocks to get the required [Block] AST nodes.
+                        let rawTextOutput = f args
+                        in compileArgToBlocks [rawTextOutput]
+                        
+                    -- Not found: treat as plain text error
+                    Nothing -> [Para [Str $ T.concat ["Unknown shortcode: ", name]]]       
+            -- Parsing failed: return raw text as an error
+            Nothing -> [Para [Str $ T.concat ["Malformed shortcode content: ", content]]]
+    
+    -- If it's any other type of block (Para, Header, List, etc.), return it unchanged.
+    _ -> [block]
+
+
+--------------------------------------------------------------------------------
+-- Final Public Entry Point
+--------------------------------------------------------------------------------
+
+-- | The top-level function that runs the complete single-pass Pandoc pipeline.
+-- It reads the document, applies the AST replacement, and writes the result to HTML.
+expandShortcodes :: ShortcodeConfig -> Text -> Text
+expandShortcodes shortcodeMap input =
+    let
+        -- 1. Options setup (Ensures MathJax and the critical tex_math_dollars are active)
+        readerExts = enableExtension Ext_tex_math_dollars pandocExtensions
+        readerOpts = def { readerExtensions = readerExts }
+        writerOpts = def { writerHTMLMathMethod = MathJax "" }
+
+        -- 2. Run the Pandoc pipeline in the runPure Monad
+        result = runPure $ do
+            -- Step A: Read the input text into the AST (This is the single read pass)
+            Pandoc meta blocks <- readMarkdown readerOpts input
+            
+            -- Step B: Apply the shortcode transformation manually (CRITICAL FIX)
+            -- We map the list-returning function (Block -> [Block]) over the document's 
+            -- blocks, resulting in [[Block]], and then flatten it using 'join' to [Block].
+            let newBlocks = join $ map (replaceShortcodes shortcodeMap) blocks
+            
+            -- Step C: Reconstruct the AST with the new, expanded blocks
+            let transformedAst = Pandoc meta newBlocks
+
+            -- Step D: Write the final, expanded AST back out to an HTML string
+            writeHtml5String writerOpts transformedAst
+
+    in case result of
+        Right t -> t
+        -- Safety Fallback: Return a detailed error message on failure
+        Left err -> T.pack $ "Error in Pandoc pipeline: " ++ show err
+
+-- Example usage (Requires defining shortcodes and a RawBlock placeholder in input)
+{-
+main :: IO ()
+main = do
+    let shortcodes :: ShortcodeMap
+        shortcodes = M.fromList [
+            -- Shortcode 1: Returns a single string (Markdown/LaTeX), which is compiled internally.
+            -- Arguments are separated by spaces in the placeholder text.
+            ("latex", \args -> T.unwords args),
+
+            -- Shortcode 2: Returns a custom string structure.
+            -- Arguments are separated by spaces in the placeholder text.
+            ("note", \args -> T.concat ["**NOTE:** ", T.unwords args])
+            ]
+
+    let input = T.unlines [
+            "# Document Title",
+            "This is normal markdown text.",
+            "<!-- SHORTCODE-PLACEHOLDER:latex:a_{11} x_1 + **bold** -->", 
+            "Another paragraph.",
+            "<!-- SHORTCODE-PLACEHOLDER:note:This is a note with *italic* text -->"
+            ]
+
+    let result = expandShortcodes shortcodes input
+    T.putStrLn result
+-}

@@ -26,8 +26,15 @@ dependencies:
 - aeson
 - filepath
 - Glob
-- pandoc
+- pandoc >= 3.1.5.2
 - mustache
+- warp
+- wai-app-static	
+- megaparsec
+- fsnotify
+- time
+- pandoc-types
+- text
 
 ghc-options:
 - -Wall

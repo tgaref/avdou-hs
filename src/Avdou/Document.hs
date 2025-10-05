@@ -1,16 +1,14 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Document
+module Avdou.Document
   ( 
     Document(..)
   , splitFrontMatter
   , parseContext
   , load
-  , markdownToHtml
-  , docPathL
-  , docContentL
-  , docMetaL
+  , markdownCompiler
+  , shortcodeCompiler
   ) where
 
 import           RIO
@@ -19,22 +17,9 @@ import           RIO.Text.Partial (splitOn)
 import qualified Data.Yaml as Yaml
 import           Data.Aeson (Value(..))
 import           Text.Pandoc
-import           Context (Context(..))
+import           Avdou.Shortcode (ShortcodeConfig, expandShortcodes)
+import           Avdou.Types
 
-data Document = Document
-  { _docPath     :: !FilePath
-  , _docContent  :: !Text
-  , _docMeta :: !Context
-  }
-
-docPathL :: Lens' Document FilePath
-docPathL = lens _docPath (\doc path -> doc {_docPath = path})
-
-docContentL :: Lens' Document Text
-docContentL = lens _docContent (\doc content -> doc {_docContent = content})
-
-docMetaL :: Lens' Document Context
-docMetaL = lens _docMeta (\doc meta -> doc {_docMeta = meta})
 
 load :: FilePath -> IO Document
 load file = do
@@ -63,14 +48,31 @@ parseContext header =
 
 
 -- Filters
-markdownToHtml :: Document -> Document
-markdownToHtml doc =
-  let readerOpts = def
-      writerOpts = def { writerHighlightStyle = Nothing } -- example customization
+markdownCompiler :: Document -> Document
+markdownCompiler doc =
+  let readerOpts = def { readerExtensions = mathExts <> readerExtensions def }
+      mathExts' = extensionsFromList
+        [ Ext_tex_math_dollars
+        , Ext_tex_math_double_backslash
+        , Ext_tex_math_single_backslash
+        , Ext_latex_macros
+        , Ext_fenced_divs
+        , Ext_raw_html
+--        , Ext_smart
+        , Ext_markdown_in_html_blocks
+        ]
+
+--        raw_html+fenced_divs+markdown_in_html_blocks+smart
+      mathExts = disableExtension Ext_raw_tex  mathExts'
+      writerOpts = def { writerHTMLMathMethod = MathJax "" }
+
   in case runPure $ do
        pandoc <- readMarkdown readerOpts (view docContentL doc)
        writeHtml5String writerOpts pandoc
      of
        Left _   -> error $ "Failed to convert file " <> view docPathL doc
        Right html -> set docContentL html doc  
-      
+
+shortcodeCompiler :: ShortcodeConfig -> Document -> Document
+shortcodeCompiler shortcodes doc =
+  set docContentL (expandShortcodes shortcodes (view docContentL doc)) doc

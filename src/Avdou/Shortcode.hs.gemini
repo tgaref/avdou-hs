@@ -1,0 +1,188 @@
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+module Avdou.Shortcode
+  ( ShortcodeConfig (..)
+  , expandShortcodes
+  , ShortcodeExpansionError (..)
+  ) where
+
+import Prelude (print)
+import           RIO hiding (try, many, some)
+import qualified RIO.Text as T
+import qualified RIO.Map as Map
+import           Text.Megaparsec
+import           Text.Megaparsec.Char
+
+-- | Type synonym for the Megaparsec parser, using Text as input and Void for custom error component.
+type Parser = Parsec Void Text
+
+-- | The core configuration for shortcode expansion.
+newtype ShortcodeConfig = ShortcodeConfig
+  { knownShortcodes :: Map Text ([Text] -> Text)
+  -- ^ A map from shortcode name (e.g., "calitem") to its expansion function.
+  }
+
+-- | Type for expansion errors.
+data ShortcodeExpansionError =
+    ExpansionError (ParseErrorBundle Text Void)
+    deriving (Show)
+
+-- | The top-level function to expand shortcodes in a block of text.
+-- expandShortcodes :: ShortcodeConfig -> Text -> Either ShortcodeExpansionError Text
+expandShortcodes :: ShortcodeConfig -> Text -> Text
+expandShortcodes config input =
+  case runParser (pContent config <* eof) "" input of
+    Left err -> error $ "Error expanding shortcode: " <> show err 
+    Right res -> res
+
+--------------------------------------------------------------------------------
+-- Parser Definitions
+--------------------------------------------------------------------------------
+
+-- The top-level content parser needs try on pShortcode as well.
+pContent :: ShortcodeConfig -> Parser Text
+pContent config = T.concat <$> many 
+    (   try (pShortcode config)
+    <|> pUnknownMacroPassThru config    -- 🌟 Handles \newcommand{...}{...}
+    <|> pNonShortcodeBackslash
+    <|> pPlainText
+    )
+
+-- The unexpanded backslash at the top level should also use `try` if you want to be safe, 
+-- but given the design of `pNonShortcodeBackslash`, it's less critical.
+pNonShortcodeBackslash :: Parser Text
+pNonShortcodeBackslash = do
+    void (char '\\')
+    notFollowedBy letterChar
+    c <- anySingle
+    return (T.pack ['\\', c])
+    
+-- | Update pShortcode to use the config when parsing arguments
+pShortcode :: ShortcodeConfig -> Parser Text
+pShortcode config = do
+  void (char '\\')
+  name <- T.pack <$> some letterChar
+  
+  case Map.lookup name (knownShortcodes config) of
+    Nothing -> fail $ "Unknown shortcode: " ++ T.unpack name
+    Just expandFn -> do
+      -- FIX: Pass 'config' to pArgument
+      args <- many (pArgument config) 
+      return (expandFn args)
+
+-- | A parser for a single argument: '{...}'
+pArgument :: ShortcodeConfig -> Parser Text
+pArgument config = do
+  void (char '{')
+  content <- pArgumentContent config -- Pass config
+  void (char '}')
+  return content
+
+-- | A parser for the content *inside* an argument.
+-- It must handle: 1. Escaped chars, 2. Balanced nested braces, 3. Nested Shortcodes.
+pArgumentContent :: ShortcodeConfig -> Parser Text
+pArgumentContent config = T.concat <$> manyTill (pArgumentComponent config <|> pNestedBrace config) (lookAhead (char '}'))
+
+pArgumentComponent :: ShortcodeConfig -> Parser Text
+pArgumentComponent config =
+      try (pShortcode config)
+  <|> pUnknownMacroPassThru config
+  <|> pEscapedBrace
+  <|> pEscapedBackslash
+  <|> pArgumentBackslash
+  <|> pPlainTextCharArg
+
+-- | Handles a backslash inside an argument that is NOT part of a valid escape or shortcode.
+-- Since the other branches handle \{, \}, and \\, this covers all other '\' cases.
+pArgumentBackslash :: Parser Text
+pArgumentBackslash = do
+    void (char '\\')
+    -- If it's followed by a letter, pShortcode would have succeeded.
+    -- If it's followed by '{' or '}', pEscapedBrace would succeed.
+    -- If it's followed by '\', pEscapedBackslash would succeed.
+    -- Therefore, this path handles '\c' where c is anything else (e.g., '\1', '\@').
+    c <- anySingle
+    return (T.pack ['\\', c])
+
+-- | Parses '\{' or '\}' which expands to '{' or '}'.
+pEscapedBrace :: Parser Text
+pEscapedBrace = T.singleton <$> (char '\\' >> (char '{' <|> char '}'))
+
+-- | Parses '\\' which expands to '\'.
+pEscapedBackslash :: Parser Text
+pEscapedBackslash = T.singleton <$> (char '\\' >> char '\\')
+
+-- | Parses a balanced pair of braces, e.g., '{text}' (but not the outermost one).
+pNestedBrace :: ShortcodeConfig -> Parser Text
+pNestedBrace config = do
+  void (char '{')
+  content <- pArgumentContent config -- **Recursive call** with config
+  void (char '}')
+  return $ T.concat ["{", content, "}"] -- Preserve the braces
+
+-- | Parses any character that is not a backslash or a brace, *inside* an argument.
+pPlainTextCharArg :: Parser Text
+pPlainTextCharArg = T.singleton <$> noneOf (T.unpack "\\{}")
+
+-- | Parses plain text: anything that isn't a backslash or an opening brace.
+-- This ensures that only characters that are NOT the start of a shortcode ('\')
+-- or the start of an argument ('{') are consumed.
+pPlainText :: Parser Text
+pPlainText = T.pack <$> some (noneOf (T.unpack "\\{"))
+
+-- | Parses any character that is not a backslash.
+pPlainTextCharContent :: Parser Char
+pPlainTextCharContent = noneOf (T.unpack "\\")
+
+-- | Handles a backslash that is *not* followed by a shortcode name (i.e., not a letter)
+-- e.g., '\123' or '\|'. It treats the backslash and the next character as plain text.
+pBackslashNoShortcode :: Parser Char
+pBackslashNoShortcode = do
+    char '\\'
+    -- Check if the next character is *not* a letter
+    notFollowedBy letterChar
+    return '\\'
+
+-- | Parses a macro like \rightarrow or \R, which is NOT in the shortcode map.
+-- This ensures they pass through unchanged.
+pUnknownMacro :: ShortcodeConfig -> Parser Text
+pUnknownMacro config = do
+    void (char '\\')
+    
+    -- Check for the name (one or more letters)
+    name <- T.pack <$> some letterChar
+    
+    -- CRITICAL: Fail if the name is a known shortcode.
+    case Map.lookup name (knownShortcodes config) of
+        Just _  -> fail $ "Known shortcode found: " ++ T.unpack name
+        Nothing -> return $ T.concat ["\\", name]
+
+-- | A simpler argument pass-through, needed for consuming arguments of unknown macros.
+
+-- | Parses any \name that is not a known shortcode, consumes its arguments, and passes it through.
+pUnknownMacroPassThru :: ShortcodeConfig -> Parser Text
+pUnknownMacroPassThru config = do
+    void (char '\\')
+    name <- T.pack <$> some letterChar
+    
+    -- Fail if it's a known shortcode (pShortcode should handle it)
+    case Map.lookup name (knownShortcodes config) of
+        Just _  -> fail $ "Known shortcode found: " ++ T.unpack name
+        Nothing -> do
+            -- If unknown, consume any arguments that immediately follow (like for \newcommand)
+            args <- many pArgumentPassThru 
+            return $ T.concat (T.cons '\\' name : args)
+
+-- | A general argument consumer that allows for balanced nested braces but performs no expansion.
+pArgumentPassThru :: Parser Text
+pArgumentPassThru = do
+    void (char '{')
+    -- Recursively consume everything until '}', allowing for balanced braces
+    content <- T.concat <$> manyTill (pArgumentPassThru <|> pSingleCharAsText) (lookAhead (char '}'))
+    void (char '}')
+    return $ T.concat ["{", content, "}"]
+
+-- | Helper parser: consumes one character and returns it as Text (Parser Text)
+pSingleCharAsText :: Parser Text
+pSingleCharAsText = T.singleton <$> anySingle

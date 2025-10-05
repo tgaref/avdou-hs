@@ -2,11 +2,10 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
 
-module Context
-  (
-    Context(..)
-  , loadTemplates
+module Avdou.Context
+  ( loadTemplates
   , insertCtx
+  , insertManyCtx
   , mergeCtx
   , lookupCtx
   ) where
@@ -19,24 +18,17 @@ import qualified RIO.Text as T
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
-
-newtype Context = Context {unContext :: Aeson.Object}
-  deriving (Eq, Show)
-
-instance Semigroup Context where
-  Context o1 <> Context o2 = Context $ KM.union o1 o2 
-
-instance Monoid Context where
-  mempty = Context mempty
-
-instance ToMustache Context where
-  toMustache (Context obj) = toMustache (Aeson.Object obj)
+import           Avdou.Types
 
 
 -- Insert a key/value
 insertCtx :: Text -> Aeson.Value -> Context -> Context
 insertCtx k v (Context obj) =
   Context (KM.insert (Key.fromText k) v obj)
+
+insertManyCtx :: Foldable t => t (Text, Aeson.Value) -> Context -> Context
+insertManyCtx kvs (Context obj) =
+  Context $ foldl' (\o (k,v) -> KM.insert (Key.fromText k) v o) obj kvs
 
 -- Merge two Contexts (right-biased)
 mergeCtx :: Context -> Context -> Context

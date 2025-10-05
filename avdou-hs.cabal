@@ -26,11 +26,14 @@ source-repository head
 library
   exposed-modules:
       Avdou
-      Context
-      Document
-      Route
-      Rule
-      Util
+      Avdou.Context
+      Avdou.Document
+      Avdou.Pattern
+      Avdou.Route
+      Avdou.Rule
+      Avdou.Run
+      Avdou.Shortcode
+      Avdou.Types
   other-modules:
       Paths_avdou_hs
   autogen-modules:
@@ -43,8 +46,15 @@ library
     , aeson
     , base >=4.11 && <10
     , filepath
+    , fsnotify
+    , megaparsec
     , mustache
-    , pandoc
+    , pandoc >=3.1.5.2
+    , pandoc-types
     , rio >=0.1.12.0
+    , text
+    , time
+    , wai-app-static
+    , warp
     , yaml
   default-language: Haskell2010

@@ -1,10 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Rule
-  ( Rule(..)
-  , Copy(..)
-  , executeRule
+module Avdou.Rule
+  ( executeRule
   , executeCopy
   ) where
 
@@ -14,33 +12,22 @@ import qualified RIO.Directory as Dir
 import qualified RIO.Text as T
 import           System.FilePath (takeDirectory, (</>), makeRelative)
 import           System.FilePath.Glob (glob)
-import           Document
-import           Route (Route)
-import           Context (Context(..), insertCtx, mergeCtx)
-import           Avdou (Site, siteDirL, publicDirL, templatesL)
 import           Data.Aeson (ToJSON (toJSON))
-import           Text.Mustache (substitute)
+import           Text.Mustache (Template, substitute)
 import qualified RIO.HashMap as HM (lookupDefault)
+import           Avdou.Document
+import           Avdou.Route
+import           Avdou.Context
+import           Avdou.Types
+import Avdou.Pattern (expandPattern)
 
-
-type Filter = Document -> Document
-
-data Rule = Rule
-  { rulePattern   :: !Text
-  , ruleFilters   :: [Filter]
-  , ruleTemplates :: [(Text, Context)]
-  , ruleRoute     :: Route 
-  }
-
-data Copy = Copy
-  { copyPattern :: !Text
-  , copyRoute   :: Route
-  }
+-- Functions
 
 executeCopy :: Site -> Copy -> IO ()
 executeCopy site (Copy pat route) = do
   let siteDir = view siteDirL site
-  files <- glob (siteDir </> T.unpack pat)   -- expand glob to actual paths
+--  files <- glob (siteDir </> T.unpack pat)   -- expand glob to actual paths
+  files <- expandPattern site pat
   forM_ files $ \src -> do
     isFile <- Dir.doesFileExist src
     when isFile $ do
@@ -53,7 +40,8 @@ executeCopy site (Copy pat route) = do
 executeRule :: Site -> Rule -> IO ()
 executeRule site (Rule pat filters templates route) = do
   let siteDir = view siteDirL site
-  files <- glob (siteDir </> T.unpack pat)   -- expand glob to actual paths
+--  files <- glob (siteDir </> T.unpack pat)   -- expand glob to actual paths
+  files <- expandPattern site pat
   forM_ files $ \src -> do
     -- load the document from disc
     doc <- load src
@@ -71,6 +59,7 @@ executeRule site (Rule pat filters templates route) = do
                             )
                      (view docContentL newDoc)
                      templates
+                     
     let finalDoc = set docContentL newContent newDoc
                     
     -- save to disc
@@ -79,3 +68,4 @@ executeRule site (Rule pat filters templates route) = do
     let dst = publicDir </> route relSrc
     Dir.createDirectoryIfMissing True (takeDirectory dst)
     writeFileUtf8 dst (view docContentL finalDoc)
+
