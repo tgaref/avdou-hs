@@ -9,6 +9,7 @@ module Avdou.Document
   , load
   , markdownCompiler
   , shortcodeCompiler
+  , copyfileCompiler
   ) where
 
 import           RIO
@@ -76,3 +77,6 @@ markdownCompiler doc =
 shortcodeCompiler :: ShortcodeConfig -> Document -> Document
 shortcodeCompiler shortcodes doc =
   set docContentL (expandShortcodes shortcodes (view docContentL doc)) doc
+
+copyfileCompiler :: Document -> Document
+copyfileCompiler = id

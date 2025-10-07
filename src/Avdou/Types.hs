@@ -1,4 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Avdou.Types
   ( Site(..)
@@ -27,13 +31,25 @@ module Avdou.Types
   , Mine (..)
   , minePatternL
   , mineWorkersL
+  , SiteM (..)
+  , RuleM (..)
+  , match
+  , copy
+  , applyCompiler
+  , applyTemplate
+  , routeTo
+  , setSiteDir
+  , setPublicDir
+  , setTemplates
   ) where
 
 import           RIO
+import           RIO.State
 import           Text.Mustache (ToMustache(..), Template)
-import           Data.Aeson as Aeson
+import           Data.Aeson as Aeson hiding ((.=))
 import qualified Data.Aeson.KeyMap as KM
-
+import           Control.Lens ((%=), (.=)
+                              )
 -- Definition of Site
 data Site = Site
   { _siteDir   :: !FilePath 
@@ -107,12 +123,24 @@ docContentL = lens _docContent (\doc content -> doc {_docContent = content})
 docMetaL :: Lens' Document Context
 docMetaL = lens _docMeta (\doc meta -> doc {_docMeta = meta})
 
+------------------------------------------
+-- Pattern  
+------------------------------------------
+
 data Pattern = Simple !Text
              | And !Text !Text
              | Or  !Text !Text
              | Diff !Text !Text
 
+------------------------------------------
+-- Route
+------------------------------------------
+
 type Route = FilePath -> FilePath 
+
+------------------------------------------
+-- Context
+------------------------------------------
 
 newtype Context = Context {unContext :: Aeson.Object}
   deriving (Eq, Show)
@@ -131,6 +159,11 @@ class HasSite env where
 
 instance HasSite Site where
   siteL = id
+
+
+------------------------------------------
+-- Mine
+------------------------------------------
   
 data Mine = Mine {
     _minePattern :: !Pattern
@@ -142,3 +175,54 @@ minePatternL = lens _minePattern (\mine pat -> mine {_minePattern = pat})
 
 mineWorkersL :: Lens' Mine [Document -> Context]
 mineWorkersL = lens _mineWorkers (\mine ws -> mine {_mineWorkers = ws})
+
+------------------------------------
+-- SiteM
+-- RuleM 
+------------------------------------
+
+newtype SiteM m a = SiteM { unSiteM :: StateT Site m a }
+  deriving (Functor, Applicative, Monad, MonadIO)
+
+instance (Monad m) => MonadState Site (SiteM m) where
+  get = SiteM get
+  put = SiteM . put
+  state = SiteM . state
+
+instance MonadTrans SiteM where
+  lift = SiteM . lift
+
+newtype RuleM m a = RuleM { unRuleM :: StateT Rule m a }
+  deriving (Functor, Applicative, Monad, MonadIO)
+
+instance (Monad m) => MonadState Rule (RuleM m) where
+  get = RuleM get
+  put = RuleM . put
+  state = RuleM . state
+
+match :: (MonadIO m) => Pattern -> RuleM m () -> SiteM m ()
+match pat builder = do
+  let base = Rule pat [] [] id
+  rule <- lift $ execStateT (unRuleM builder) base
+  rulesL %= (rule :)
+
+copy :: (Monad m) => Pattern -> Route -> SiteM m ()
+copy pat r = copiesL %= (Copy pat r :)
+
+applyCompiler :: (Monad m) => Filter -> RuleM m ()
+applyCompiler f = ruleFiltersL %= (<> [f])
+
+applyTemplate :: (Monad m) => Text -> Context -> RuleM m ()
+applyTemplate tpl ctx = ruleTemplatesL %= (<> [(tpl, ctx)])
+
+routeTo :: (Monad m) => Route -> RuleM m ()
+routeTo r = ruleRouteL .= r
+
+setSiteDir :: Monad m => FilePath -> SiteM m ()
+setSiteDir dir = siteDirL .= dir
+
+setPublicDir :: Monad m => FilePath -> SiteM m ()
+setPublicDir dir = publicDirL .= dir
+
+setTemplates :: Monad m => HashMap Text Template -> SiteM m ()
+setTemplates tpls = templatesL .= tpls

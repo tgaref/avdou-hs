@@ -47,6 +47,7 @@ library
     , base >=4.11 && <10
     , filepath
     , fsnotify
+    , lens
     , megaparsec
     , mustache
     , pandoc >=3.1.5.2
