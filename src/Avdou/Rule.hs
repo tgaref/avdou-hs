@@ -10,6 +10,7 @@ import           Prelude (print)
 import           RIO
 import qualified RIO.Directory as Dir
 import qualified RIO.Text as T
+import qualified RIO.ByteString as B
 import           System.FilePath (takeDirectory, (</>), makeRelative)
 import           Data.Aeson (ToJSON (toJSON))
 import           Text.Mustache (substitute)
@@ -34,16 +35,16 @@ executeCopy site (Copy pat route) = do
     Dir.copyFile src dst
 
 executeRule :: Site -> Rule -> IO ()
-executeRule site (Rule pat filters templates route) = do
+executeRule site (Rule pat filters templates route splitMeta) = do
   let siteDir = view siteDirL site
   files' <- expandPattern siteDir pat
   files <- filterM Dir.doesFileExist files'
   forM_ files $ \src -> do
     -- load the document from disc
-    doc <- load src
-    
+    doc <- load src splitMeta
+      
     -- apply filters
-    let newDoc = foldl' (\acc f -> f acc) doc filters  
+    newDoc <- foldM (\acc f -> f acc) doc filters  
       
     -- apply templates
     let ts   = view templatesL site

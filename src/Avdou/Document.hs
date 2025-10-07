@@ -9,11 +9,12 @@ module Avdou.Document
   , load
   , markdownCompiler
   , shortcodeCompiler
-  , copyfileCompiler
+  , copyFileCompiler
   ) where
 
 import           RIO
 import qualified RIO.Text as T
+import qualified RIO.ByteString as B
 import           RIO.Text.Partial (splitOn)
 import qualified Data.Yaml as Yaml
 import           Data.Aeson (Value(..))
@@ -21,18 +22,21 @@ import           Text.Pandoc
 import           Avdou.Shortcode (ShortcodeConfig, expandShortcodes)
 import           Avdou.Types
 
-
-load :: FilePath -> IO Document
-load file = do
-  content <- readFileUtf8 file
-  let (header, rest) = splitFrontMatter content
-  case header of
-    Nothing  -> pure $ Document file rest mempty
-    (Just h) -> let meta = parseContext h
-      in pure $ Document file rest meta
-  
+load :: FilePath -> Bool -> IO Document
+load fp splitMeta = do
+  txt <- readFileUtf8 fp
+  if splitMeta
+    then do
+    let (header, rest) = splitFrontMatter txt
+    case header of
+      Nothing  -> pure $ Document fp rest mempty
+      (Just h) -> let meta = parseContext (encodeUtf8 h)
+                  in pure $ Document fp rest meta
+    else pure $ Document fp txt mempty
+ 
 
 -- Split front matter from Markdown
+
 splitFrontMatter :: Text -> (Maybe Text, Text)
 splitFrontMatter txt =
     case splitOn "---" txt of
@@ -40,17 +44,28 @@ splitFrontMatter txt =
       _               -> (Nothing, txt)
 
 -- Parse header into Context map
-parseContext :: Text -> Context
+parseContext :: ByteString -> Context
 parseContext header =
-    case Yaml.decodeEither' (encodeUtf8 header) of
+    case Yaml.decodeEither' header of
       Left err    -> error (show err)
       Right (Object o) -> Context o -- o :: HashMap Text Value
       Right _          -> error "Expected a YAML mapping at top level"
 
+------------------------------------------------------------
+-- Helper functions
+------------------------------------------------------------
+withTextContent
+  :: MonadIO m
+  => (Text -> m Text)
+  -> Document
+  -> m Document
+withTextContent f doc = do
+  newTxt <- f (view docContentL doc)
+  pure $ set docContentL newTxt doc 
 
 -- Filters
-markdownCompiler :: Document -> Document
-markdownCompiler doc =
+markdownToHtml :: Text -> IO Text
+markdownToHtml txt =
   let readerOpts = def { readerExtensions = mathExts <> readerExtensions def }
       mathExts' = extensionsFromList
         [ Ext_tex_math_dollars
@@ -68,15 +83,21 @@ markdownCompiler doc =
       writerOpts = def { writerHTMLMathMethod = MathJax "" }
 
   in case runPure $ do
-       pandoc <- readMarkdown readerOpts (view docContentL doc)
+       pandoc <- readMarkdown readerOpts txt
        writeHtml5String writerOpts pandoc
      of
-       Left _   -> error $ "Failed to convert file " <> view docPathL doc
-       Right html -> set docContentL html doc  
+       Left _     -> error $ "Failed to convert file " <> T.unpack (T.take 100 txt)
+       Right html -> pure html
 
-shortcodeCompiler :: ShortcodeConfig -> Document -> Document
-shortcodeCompiler shortcodes doc =
-  set docContentL (expandShortcodes shortcodes (view docContentL doc)) doc
+markdownCompiler :: Document -> IO Document
+markdownCompiler = withTextContent markdownToHtml
 
-copyfileCompiler :: Document -> Document
-copyfileCompiler = id
+shortcodeExpander :: ShortcodeConfig -> Text -> IO Text
+shortcodeExpander shortcodes txt =
+  pure $ expandShortcodes shortcodes txt
+
+shortcodeCompiler :: ShortcodeConfig -> Document -> IO Document
+shortcodeCompiler shortcodes = withTextContent (shortcodeExpander shortcodes)
+
+copyFileCompiler :: Document -> IO Document
+copyFileCompiler = pure

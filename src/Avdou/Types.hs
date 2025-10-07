@@ -1,5 +1,4 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -17,6 +16,7 @@ module Avdou.Types
   , rulePatternL
   , ruleRouteL
   , ruleTemplatesL
+  , ruleSplitMetaL
   , Copy (..)
   , copyPatternL
   , copyRouteL
@@ -31,6 +31,7 @@ module Avdou.Types
   , Mine (..)
   , minePatternL
   , mineWorkersL
+  , mineSplitMetaL
   , SiteM (..)
   , RuleM (..)
   , match
@@ -41,6 +42,7 @@ module Avdou.Types
   , setSiteDir
   , setPublicDir
   , setTemplates
+  , getMetadata
   ) where
 
 import           RIO
@@ -48,8 +50,8 @@ import           RIO.State
 import           Text.Mustache (ToMustache(..), Template)
 import           Data.Aeson as Aeson hiding ((.=))
 import qualified Data.Aeson.KeyMap as KM
-import           Control.Lens ((%=), (.=)
-                              )
+import           Control.Lens ((%=), (.=))
+                              
 -- Definition of Site
 data Site = Site
   { _siteDir   :: !FilePath 
@@ -75,14 +77,15 @@ copiesL :: Lens' Site [Copy]
 copiesL = lens _copies (\site copies -> site {_copies = copies})
 
 -- Definition of Filter
-type Filter = Document -> Document
+type Filter = Document -> IO Document
 
 -- Definition of Rule and Copy 
 data Rule = Rule
   { _rulePattern   :: !Pattern
   , _ruleFilters   :: [Filter]
   , _ruleTemplates :: [(Text, Context)]
-  , _ruleRoute     :: Route 
+  , _ruleRoute     :: Route
+  , _ruleSplitMeta     :: !Bool
   }
 
 data Copy = Copy
@@ -101,6 +104,9 @@ ruleTemplatesL = lens _ruleTemplates (\rule ts -> rule {_ruleTemplates = ts})
 
 ruleRouteL :: Lens' Rule Route
 ruleRouteL = lens _ruleRoute (\rule route -> rule {_ruleRoute = route})
+
+ruleSplitMetaL :: Lens' Rule Bool
+ruleSplitMetaL = lens _ruleSplitMeta (\rule b -> rule {_ruleSplitMeta = b})
 
 copyPatternL :: Lens' Copy Pattern
 copyPatternL = lens _copyPattern (\copy pat -> copy {_copyPattern = pat})
@@ -168,6 +174,7 @@ instance HasSite Site where
 data Mine = Mine {
     _minePattern :: !Pattern
   , _mineWorkers :: [Document -> Context]
+  , _mineSplitMeta :: !Bool
   }
 
 minePatternL :: Lens' Mine Pattern
@@ -175,6 +182,9 @@ minePatternL = lens _minePattern (\mine pat -> mine {_minePattern = pat})
 
 mineWorkersL :: Lens' Mine [Document -> Context]
 mineWorkersL = lens _mineWorkers (\mine ws -> mine {_mineWorkers = ws})
+
+mineSplitMetaL :: Lens' Mine Bool
+mineSplitMetaL = lens _mineSplitMeta (\mine b -> mine {_mineSplitMeta = b})
 
 ------------------------------------
 -- SiteM
@@ -202,7 +212,7 @@ instance (Monad m) => MonadState Rule (RuleM m) where
 
 match :: (MonadIO m) => Pattern -> RuleM m () -> SiteM m ()
 match pat builder = do
-  let base = Rule pat [] [] id
+  let base = Rule pat [] [] id False
   rule <- lift $ execStateT (unRuleM builder) base
   rulesL %= (rule :)
 
@@ -215,6 +225,9 @@ applyCompiler f = ruleFiltersL %= (<> [f])
 applyTemplate :: (Monad m) => Text -> Context -> RuleM m ()
 applyTemplate tpl ctx = ruleTemplatesL %= (<> [(tpl, ctx)])
 
+getMetadata :: Monad m => RuleM m ()
+getMetadata = ruleSplitMetaL .= True
+
 routeTo :: (Monad m) => Route -> RuleM m ()
 routeTo r = ruleRouteL .= r
 
@@ -226,3 +239,4 @@ setPublicDir dir = publicDirL .= dir
 
 setTemplates :: Monad m => HashMap Text Template -> SiteM m ()
 setTemplates tpls = templatesL .= tpls
+

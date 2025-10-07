@@ -36,6 +36,7 @@ dependencies:
 - pandoc-types
 - text
 - lens
+- bytestring
 
 ghc-options:
 - -Wall

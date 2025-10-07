@@ -45,6 +45,7 @@ library
       Glob
     , aeson
     , base >=4.11 && <10
+    , bytestring
     , filepath
     , fsnotify
     , lens

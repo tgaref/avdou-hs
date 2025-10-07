@@ -52,18 +52,16 @@ loadTemplates path = do
   pure $ fromList templates
 
 executeMine :: FilePath -> Mine -> IO (HashMap Text Context)
-executeMine siteDir mine = do
-  let pat  = view minePatternL mine
-  let workers = view mineWorkersL mine 
+executeMine siteDir (Mine pat workers splitMeta) = do
   files <- expandPattern siteDir pat
   list <- forM files $ \file -> do
-    ctx <- mineLocal file workers
+    ctx <- mineLocal file splitMeta workers 
     pure (T.pack file, ctx)
 
   pure $ fromList list
 
-mineLocal :: FilePath -> [Document -> Context] -> IO Context
-mineLocal file workers = do
-    doc <- load file
+mineLocal :: FilePath -> Bool -> [Document -> Context] -> IO Context
+mineLocal file splitMeta workers = do
+    doc <- load file splitMeta
     pure $ foldl' (\acc f -> mergeCtx (f doc) acc) mempty workers
 
