@@ -6,11 +6,9 @@ module Avdou.Rule
   , executeCopy
   ) where
 
-import           Prelude (print)
 import           RIO
 import qualified RIO.Directory as Dir
 import qualified RIO.Text as T
-import qualified RIO.ByteString as B
 import           System.FilePath (takeDirectory, (</>), makeRelative)
 import           Data.Aeson (ToJSON (toJSON))
 import           Text.Mustache (substitute)

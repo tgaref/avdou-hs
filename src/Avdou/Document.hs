@@ -14,7 +14,6 @@ module Avdou.Document
 
 import           RIO
 import qualified RIO.Text as T
-import qualified RIO.ByteString as B
 import           RIO.Text.Partial (splitOn)
 import qualified Data.Yaml as Yaml
 import           Data.Aeson (Value(..))

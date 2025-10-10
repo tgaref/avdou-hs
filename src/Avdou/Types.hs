@@ -47,6 +47,7 @@ module Avdou.Types
 
 import           RIO
 import           RIO.State
+import qualified RIO.Text as T
 import           Text.Mustache (ToMustache(..), Template)
 import           Data.Aeson as Aeson hiding ((.=))
 import qualified Data.Aeson.KeyMap as KM
@@ -109,10 +110,10 @@ ruleSplitMetaL :: Lens' Rule Bool
 ruleSplitMetaL = lens _ruleSplitMeta (\rule b -> rule {_ruleSplitMeta = b})
 
 copyPatternL :: Lens' Copy Pattern
-copyPatternL = lens _copyPattern (\copy pat -> copy {_copyPattern = pat})
+copyPatternL = lens _copyPattern (\cp pat -> cp {_copyPattern = pat})
 
 copyRouteL :: Lens' Copy Route
-copyRouteL = lens _copyRoute (\copy route -> copy {_copyRoute = route})
+copyRouteL = lens _copyRoute (\cp route -> cp {_copyRoute = route})
 
 data Document = Document
   { _docPath     :: !FilePath
@@ -137,6 +138,10 @@ data Pattern = Simple !Text
              | And !Text !Text
              | Or  !Text !Text
              | Diff !Text !Text
+  deriving (Eq, Show)
+
+instance IsString Pattern where
+  fromString = Simple . T.pack
 
 ------------------------------------------
 -- Route
@@ -212,7 +217,7 @@ instance (Monad m) => MonadState Rule (RuleM m) where
 
 match :: (MonadIO m) => Pattern -> RuleM m () -> SiteM m ()
 match pat builder = do
-  let base = Rule pat [] [] id False
+  let base = Rule pat [] [] id True  -- By default, slit and parse Metadata
   rule <- lift $ execStateT (unRuleM builder) base
   rulesL %= (rule :)
 
@@ -225,8 +230,8 @@ applyCompiler f = ruleFiltersL %= (<> [f])
 applyTemplate :: (Monad m) => Text -> Context -> RuleM m ()
 applyTemplate tpl ctx = ruleTemplatesL %= (<> [(tpl, ctx)])
 
-getMetadata :: Monad m => RuleM m ()
-getMetadata = ruleSplitMetaL .= True
+getMetadata :: Monad m => Bool -> RuleM m ()
+getMetadata b = ruleSplitMetaL .= b
 
 routeTo :: (Monad m) => Route -> RuleM m ()
 routeTo r = ruleRouteL .= r

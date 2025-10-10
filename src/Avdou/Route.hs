@@ -9,8 +9,6 @@ module Avdou.Route
 import RIO
 import RIO.FilePath
 
-import Avdou.Types
-
 idRoute :: FilePath -> FilePath
 idRoute = id
 

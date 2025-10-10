@@ -16,7 +16,6 @@ import           Text.Mustache (Template, automaticCompile)
 import           RIO.Directory (listDirectory)
 import           RIO.HashMap (fromList)
 import qualified RIO.Text as T
-import qualified RIO.Map as Map 
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM

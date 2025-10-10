@@ -3,6 +3,9 @@
 
 module Avdou.Pattern
   ( expandPattern
+  , (.&&.)
+  , (.||.)
+  , (.\\.)
   ) where
 
 import           RIO
@@ -31,3 +34,12 @@ expandPattern siteDir pat = do
       lp1 <- glob (siteDir </> T.unpack p1)
       setp2 <- fromList <$> glob (siteDir </> T.unpack p2)
       pure $ filter (\p -> not (p `member` setp2)) lp1
+
+(.&&.) :: Text -> Text -> Pattern
+p1 .&&. p2 = And p1 p2
+
+(.||.) :: Text -> Text -> Pattern
+p1 .||. p2 = Or p1 p2
+
+(.\\.) :: Text -> Text -> Pattern
+p1 .\\. p2 = Diff p1 p2
