@@ -29,9 +29,12 @@ module Avdou.Types
   , Route
   , HasSite (..)
   , Mine (..)
+  , Miner
   , minePatternL
   , mineWorkersL
   , mineSplitMetaL
+  , MineM (..)
+  , applyMiner
   , SiteM (..)
   , RuleM (..)
   , match
@@ -175,21 +178,41 @@ instance HasSite Site where
 ------------------------------------------
 -- Mine
 ------------------------------------------
+
+type Miner = Document -> Context 
   
 data Mine = Mine {
     _minePattern :: !Pattern
-  , _mineWorkers :: [Document -> Context]
+  , _mineWorkers :: [Miner]
   , _mineSplitMeta :: !Bool
   }
 
 minePatternL :: Lens' Mine Pattern
 minePatternL = lens _minePattern (\mine pat -> mine {_minePattern = pat})
 
-mineWorkersL :: Lens' Mine [Document -> Context]
+mineWorkersL :: Lens' Mine [Miner]
 mineWorkersL = lens _mineWorkers (\mine ws -> mine {_mineWorkers = ws})
 
 mineSplitMetaL :: Lens' Mine Bool
 mineSplitMetaL = lens _mineSplitMeta (\mine b -> mine {_mineSplitMeta = b})
+
+------------------------------------
+-- MineM
+------------------------------------
+
+newtype MineM m a = MineM { unMineM :: StateT Mine m a }
+  deriving (Functor, Applicative, Monad, MonadIO)
+
+instance (Monad m) => MonadState Mine (MineM m) where
+  get = MineM get
+  put = MineM . put
+  state = MineM . state
+
+instance MonadTrans MineM where
+  lift = MineM . lift
+
+applyMiner :: (Monad m) => Miner -> MineM m ()
+applyMiner f = mineWorkersL %= (<> [f])
 
 ------------------------------------
 -- SiteM

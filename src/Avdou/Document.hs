@@ -21,7 +21,7 @@ import           Text.Pandoc
 import           Avdou.Shortcode (ShortcodeConfig, expandShortcodes)
 import           Avdou.Types
 
-load :: FilePath -> Bool -> IO Document
+load :: MonadIO m => FilePath -> Bool -> m Document
 load fp splitMeta = do
   txt <- readFileUtf8 fp
   if splitMeta

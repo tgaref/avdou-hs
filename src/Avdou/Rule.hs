@@ -20,7 +20,7 @@ import Avdou.Pattern (expandPattern)
 
 -- Functions
 
-executeCopy :: Site -> Copy -> IO ()
+executeCopy :: MonadIO m => Site -> Copy -> m ()
 executeCopy site (Copy pat route) = do
   let siteDir = view siteDirL site
   files' <- expandPattern siteDir pat
@@ -32,7 +32,7 @@ executeCopy site (Copy pat route) = do
     Dir.createDirectoryIfMissing True (takeDirectory dst)
     Dir.copyFile src dst
 
-executeRule :: Site -> Rule -> IO ()
+executeRule :: MonadIO m => Site -> Rule -> m ()
 executeRule site (Rule pat filters templates route splitMeta) = do
   let siteDir = view siteDirL site
   files' <- expandPattern siteDir pat
@@ -42,7 +42,7 @@ executeRule site (Rule pat filters templates route splitMeta) = do
     doc <- load src splitMeta
       
     -- apply filters
-    newDoc <- foldM (\acc f -> f acc) doc filters  
+    newDoc <- foldM (\acc f -> liftIO (f acc)) doc filters  
       
     -- apply templates
     let ts   = view templatesL site
