@@ -1,10 +1,9 @@
-# example-site
+# A simple static site generator 
 
-## Execute
+Avdou-hs is a simple static site generator (ssg) library, written is haskell. You can use it to build your own ssg.
 
-* Run `stack exec -- example-site-exe` to see "We're inside the application!"
-* With `stack exec -- example-site-exe --verbose` you will see the same message, with more logging.
+## Build
 
-## Run tests
-
-`stack test`
+* Run `stack build` to build your generator. This is needed only if the configuration of your site (in haskell) has changed.
+* Run `stack exec -- site` to build you site (the name of the executable can be anything you choose -- it does not have to be 'site').
+* Run `stack exec -- watch` to start the local server and see your site locally.
