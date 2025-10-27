@@ -37,6 +37,9 @@ dependencies:
 - text
 - lens
 - bytestring
+- streamly
+- streamly-core
+- monad-control
 
 ghc-options:
 - -O2

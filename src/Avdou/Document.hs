@@ -21,8 +21,8 @@ import           Text.Pandoc
 import           Avdou.Shortcode (ShortcodeConfig, expandShortcodes)
 import           Avdou.Types
 
-load :: MonadIO m => FilePath -> Bool -> m Document
-load fp splitMeta = do
+load :: MonadIO m => Bool -> FilePath -> m Document
+load splitMeta fp = do
   txt <- readFileUtf8 fp
   if splitMeta
     then do
@@ -73,6 +73,7 @@ markdownToHtml txt =
         , Ext_latex_macros
         , Ext_fenced_divs
         , Ext_raw_html
+        , Ext_link_attributes
 --        , Ext_smart
         , Ext_markdown_in_html_blocks
         ]

@@ -20,10 +20,23 @@ import           WaiAppStatic.Types (toPiece, ssListing, StaticSettings)
 import           Network.Wai.Application.Static (staticApp, defaultFileServerSettings, ssIndices)
 import           Avdou.Types
 
+import qualified Streamly.Data.Stream.Prelude as S
+import qualified Streamly.Data.Stream as Stream
+import qualified Streamly.Data.Fold as Fold
+
+
 build :: Site -> IO ()
 build site = do
-  forM_ (view copiesL site) (executeCopy site)  
-  forM_ (view rulesL site) (executeRule site)
+  let copies = S.fromList (view copiesL site)
+               & S.mapM (executeCopy site)
+  let rules = S.fromList (view rulesL site)
+              & S.mapM (executeRule site)
+              
+  S.fold Fold.drain copies 
+  S.fold Fold.drain rules
+  
+--  forM_ (view copiesL site) (executeCopy site)  
+--  forM_ (view rulesL site) (executeRule site)
   
 clean :: Site -> IO ()
 clean site = do

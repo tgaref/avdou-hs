@@ -89,7 +89,7 @@ data Rule = Rule
   , _ruleFilters   :: [Filter]
   , _ruleTemplates :: [(Text, Context)]
   , _ruleRoute     :: Route
-  , _ruleSplitMeta     :: !Bool
+  , _ruleSplitMeta :: !Bool
   }
 
 data Copy = Copy
@@ -182,8 +182,8 @@ instance HasSite Site where
 type Miner = Document -> Context 
   
 data Mine = Mine {
-    _minePattern :: !Pattern
-  , _mineWorkers :: [Miner]
+    _minePattern   :: !Pattern
+  , _mineWorkers   :: [Miner]
   , _mineSplitMeta :: !Bool
   }
 

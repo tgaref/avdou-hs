@@ -50,10 +50,13 @@ library
     , fsnotify
     , lens
     , megaparsec
+    , monad-control
     , mustache
     , pandoc >=3.1.5.2
     , pandoc-types
     , rio >=0.1.12.0
+    , streamly
+    , streamly-core
     , text
     , time
     , wai-app-static

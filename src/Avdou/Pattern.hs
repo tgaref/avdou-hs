@@ -16,6 +16,7 @@ import           RIO.HashSet (union, intersection, fromList, member)
 import           System.FilePath ((</>))
 
 expandPattern :: MonadIO m => FilePath -> Pattern -> m [FilePath]
+--expandPattern :: FilePath -> Pattern -> IO [FilePath]
 expandPattern siteDir pat = do
   case pat of
     Simple p -> liftIO $ glob (siteDir </> T.unpack p)

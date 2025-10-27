@@ -25,6 +25,11 @@ import           Avdou.Types
 import           Avdou.Document (load)
 import           Avdou.Pattern
 
+import qualified Streamly.Data.Stream.Prelude as S
+import qualified Streamly.Data.Stream as Stream
+import qualified Streamly.Data.Fold as Fold
+
+
 -- Insert a key/value
 insertCtx :: Text -> Aeson.Value -> Context -> Context
 insertCtx k v (Context obj) =
@@ -52,18 +57,32 @@ loadTemplates path = do
                        ) eitherTemplates
   pure $ fromList templates
 
-executeMine :: MonadIO m => FilePath -> Mine -> m (HashMap Text Context)
-executeMine siteDir (Mine pat workers splitMeta) = do
-  files <- expandPattern siteDir pat
+{-
+executeMine' :: MonadIO m => FilePath -> Mine -> m (HashMap Text Context)
+executeMine' siteDir (Mine pat workers splitMeta) = do
+  files <- expandPattern siteDir pat    
   list <- forM files $ \file -> do
     ctx <- mineLocal file splitMeta workers 
     pure (T.pack file, ctx)
 
   pure $ fromList list
+-}
+
+executeMine :: MonadIO m => FilePath -> Mine -> m (HashMap Text Context)
+executeMine siteDir (Mine pat workers splitMeta) = do
+  files <- expandPattern siteDir pat
+  stream <- S.fromList files
+            & S.mapM (\file -> do
+                         ctx <- mineLocal file splitMeta workers 
+                         pure (T.pack file, ctx)
+                     )
+            & S.toList
+  pure $ fromList stream
+                          
 
 mineLocal :: MonadIO m =>  FilePath -> Bool -> [Document -> Context] -> m Context
 mineLocal file splitMeta workers = do
-    doc <- load file splitMeta
+    doc <- load splitMeta file
     pure $ foldl' (\acc f -> mergeCtx (f doc) acc) mempty workers
 
 mine :: (MonadIO m) => FilePath -> Pattern -> MineM m () -> m (HashMap Text Context)
